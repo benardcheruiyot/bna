@@ -171,6 +171,55 @@ upsert_env() {
 	fi
 }
 
+validate_backend_env() {
+	local file="$1"
+
+	if [[ ! -s "$file" ]]; then
+		echo "backend env file is missing or empty: $file"
+		exit 1
+	fi
+
+	if grep -Eq '^NODE_ENV=.*PORT=' "$file"; then
+		echo "Invalid backend env format: NODE_ENV and PORT appear on the same line"
+		exit 1
+	fi
+
+	if ! grep -Eq '^NODE_ENV=' "$file"; then
+		echo "Invalid backend env format: missing NODE_ENV"
+		exit 1
+	fi
+
+	if ! grep -Eq '^PORT=' "$file"; then
+		echo "Invalid backend env format: missing PORT"
+		exit 1
+	fi
+}
+
+ensure_backend_port_ready() {
+	local port="$1"
+	local project_dir="$2"
+	local existing_pid=""
+	local existing_cmd=""
+
+	existing_pid="$(ss -ltnp 2>/dev/null | awk -v p=":${port}" '$4 ~ p { if (match($0,/pid=[0-9]+/)) { print substr($0,RSTART+4,RLENGTH-4); exit } }')"
+
+	if [[ -z "$existing_pid" ]]; then
+		return 0
+	fi
+
+	existing_cmd="$(ps -p "$existing_pid" -o args= 2>/dev/null || true)"
+
+	if [[ "$existing_cmd" == *"${project_dir}/backend"* ]]; then
+		echo "Stopping stale backend process on port ${port} (pid: ${existing_pid})"
+		kill "$existing_pid" || true
+		sleep 2
+	else
+		echo "Port ${port} is occupied by a different process: ${existing_cmd}"
+		echo "Refusing to continue to avoid impacting another app."
+		exit 1
+	fi
+}
+
 apt_safe() {
 	local tries=18
 	local delay=10
@@ -265,6 +314,8 @@ upsert_env "MPESA_CALLBACK_URL" "https://${DOMAIN}/api/mpesa/callback" "backend/
 
 upsert_env "REACT_APP_API_URL" "https://${DOMAIN}/api" "frontend/.env"
 
+validate_backend_env "backend/.env"
+
 echo "[4/8] Installing backend dependencies"
 cd "$PROJECT_DIR/backend"
 npm ci
@@ -276,11 +327,35 @@ npm run build
 
 echo "[6/8] Starting backend with PM2"
 cd "$PROJECT_DIR/backend"
+
+ensure_backend_port_ready "$BACKEND_PORT" "$PROJECT_DIR"
+
 if pm2 describe "$PM2_APP_NAME" >/dev/null 2>&1; then
 	pm2 restart "$PM2_APP_NAME" --update-env
 else
 	pm2 start npm --name "$PM2_APP_NAME" -- start
 fi
+
+PM2_PID="$(pm2 pid "$PM2_APP_NAME" | tr -d '[:space:]')"
+if [[ -z "$PM2_PID" || "$PM2_PID" == "0" ]]; then
+	echo "PM2 app failed to start: ${PM2_APP_NAME}"
+	pm2 logs "$PM2_APP_NAME" --lines 80 || true
+	exit 1
+fi
+
+if ! ss -ltnp | grep -E ":${BACKEND_PORT}[[:space:]].*pid=${PM2_PID}," >/dev/null 2>&1; then
+	echo "PM2 app is not listening on expected port ${BACKEND_PORT} (pid: ${PM2_PID})"
+	pm2 show "$PM2_APP_NAME" || true
+	pm2 logs "$PM2_APP_NAME" --lines 80 || true
+	exit 1
+fi
+
+if ! curl -fsS --max-time 10 "http://127.0.0.1:${BACKEND_PORT}/api/health" >/dev/null; then
+	echo "Local backend health check failed on port ${BACKEND_PORT}"
+	pm2 logs "$PM2_APP_NAME" --lines 80 || true
+	exit 1
+fi
+
 pm2 save
 pm2 startup systemd -u root --hp /root >/dev/null 2>&1 || true
 

@@ -57,6 +57,26 @@ jobs:
           printf '%s' "$BACKEND_ENV_FILE" > backend/.env
           printf '%s' "$FRONTEND_ENV_FILE" > frontend/.env
 
+      - name: Validate backend env formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! grep -Eq '^NODE_ENV=' backend/.env; then
+            echo "backend/.env is missing NODE_ENV"
+            exit 1
+          fi
+
+          if ! grep -Eq '^PORT=' backend/.env; then
+            echo "backend/.env is missing PORT"
+            exit 1
+          fi
+
+          if grep -Eq '^NODE_ENV=.*PORT=' backend/.env; then
+            echo "backend/.env is malformed (NODE_ENV and PORT on same line)"
+            exit 1
+          fi
+
       - name: Run full remote recovery deployment
         shell: bash
         env:
