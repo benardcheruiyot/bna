@@ -343,20 +343,23 @@ fi
 PM2_PID="$(pm2 pid "$PM2_APP_NAME" | tr -d '[:space:]')"
 if [[ -z "$PM2_PID" || "$PM2_PID" == "0" ]]; then
 	echo "PM2 app failed to start: ${PM2_APP_NAME}"
-	pm2 logs "$PM2_APP_NAME" --lines 80 || true
+	tail -n 80 "/root/.pm2/logs/${PM2_APP_NAME}-error.log" || true
+	tail -n 80 "/root/.pm2/logs/${PM2_APP_NAME}-out.log" || true
 	exit 1
 fi
 
 if ! ss -ltnp | grep -E ":${BACKEND_PORT}[[:space:]].*pid=${PM2_PID}," >/dev/null 2>&1; then
 	echo "PM2 app is not listening on expected port ${BACKEND_PORT} (pid: ${PM2_PID})"
 	pm2 show "$PM2_APP_NAME" || true
-	pm2 logs "$PM2_APP_NAME" --lines 80 || true
+	tail -n 80 "/root/.pm2/logs/${PM2_APP_NAME}-error.log" || true
+	tail -n 80 "/root/.pm2/logs/${PM2_APP_NAME}-out.log" || true
 	exit 1
 fi
 
 if ! curl -fsS --max-time 10 "http://127.0.0.1:${BACKEND_PORT}/api/health" >/dev/null; then
 	echo "Local backend health check failed on port ${BACKEND_PORT}"
-	pm2 logs "$PM2_APP_NAME" --lines 80 || true
+	tail -n 80 "/root/.pm2/logs/${PM2_APP_NAME}-error.log" || true
+	tail -n 80 "/root/.pm2/logs/${PM2_APP_NAME}-out.log" || true
 	exit 1
 fi
 
