@@ -146,6 +146,8 @@ EMAIL="$2"
 REPO_URL="$3"
 BRANCH="$4"
 PROJECT_DIR="$5"
+APP_SLUG="$(printf '%s' "$DOMAIN" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
+RECOVERY_ENV_DIR="/tmp/${APP_SLUG}-recovery-env"
 
 WWW_DOMAIN="www.${DOMAIN}"
 NGINX_CONF="/etc/nginx/sites-available/${DOMAIN}.conf"

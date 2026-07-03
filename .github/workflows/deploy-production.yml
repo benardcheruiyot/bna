@@ -38,21 +38,24 @@ jobs:
 
       - name: Prepare env files from GitHub Secrets
         shell: bash
+        env:
+          BACKEND_ENV_FILE: ${{ secrets.BACKEND_ENV_FILE }}
+          FRONTEND_ENV_FILE: ${{ secrets.FRONTEND_ENV_FILE }}
         run: |
           set -euo pipefail
 
-          if [ -z "${{ secrets.BACKEND_ENV_FILE }}" ]; then
+          if [ -z "${BACKEND_ENV_FILE:-}" ]; then
             echo "Missing required secret: BACKEND_ENV_FILE"
             exit 1
           fi
 
-          if [ -z "${{ secrets.FRONTEND_ENV_FILE }}" ]; then
+          if [ -z "${FRONTEND_ENV_FILE:-}" ]; then
             echo "Missing required secret: FRONTEND_ENV_FILE"
             exit 1
           fi
 
-          printf '%s' "${{ secrets.BACKEND_ENV_FILE }}" > backend/.env
-          printf '%s' "${{ secrets.FRONTEND_ENV_FILE }}" > frontend/.env
+          printf '%s' "$BACKEND_ENV_FILE" > backend/.env
+          printf '%s' "$FRONTEND_ENV_FILE" > frontend/.env
 
       - name: Run full remote recovery deployment
         shell: bash
