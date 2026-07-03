@@ -202,26 +202,33 @@ ensure_backend_port_ready() {
 	local existing_pid=""
 	local existing_cmd=""
 	local existing_cwd=""
+	local i
 
-	existing_pid="$(ss -ltnp 2>/dev/null | awk -v p=":${port}" '$4 ~ p { if (match($0,/pid=[0-9]+/)) { print substr($0,RSTART+4,RLENGTH-4); exit } }')"
+	for i in $(seq 1 12); do
+		existing_pid="$(ss -ltnp 2>/dev/null | awk -v p=":${port}" '$4 ~ p { if (match($0,/pid=[0-9]+/)) { print substr($0,RSTART+4,RLENGTH-4); exit } }')"
 
-	if [[ -z "$existing_pid" ]]; then
-		return 0
-	fi
+		if [[ -z "$existing_pid" ]]; then
+			return 0
+		fi
 
-	existing_cmd="$(ps -p "$existing_pid" -o args= 2>/dev/null || true)"
-	existing_cwd="$(readlink -f "/proc/${existing_pid}/cwd" 2>/dev/null || true)"
+		existing_cmd="$(ps -p "$existing_pid" -o args= 2>/dev/null || true)"
+		existing_cwd="$(readlink -f "/proc/${existing_pid}/cwd" 2>/dev/null || true)"
 
-	if [[ "$existing_cmd" == *"${backend_dir}"* || "$existing_cwd" == "$backend_dir" ]]; then
-		echo "Stopping stale backend process on port ${port} (pid: ${existing_pid})"
-		kill "$existing_pid" || true
-		sleep 2
-	else
+		if [[ "$existing_cmd" == *"${backend_dir}"* || "$existing_cwd" == "$backend_dir" || "$existing_cmd" == *"src/server.js"* ]]; then
+			echo "Stopping stale backend process on port ${port} (pid: ${existing_pid})"
+			kill "$existing_pid" || true
+			sleep 1
+			continue
+		fi
+
 		echo "Port ${port} is occupied by a different process: ${existing_cmd}"
 		echo "Process cwd: ${existing_cwd:-unknown}"
 		echo "Refusing to continue to avoid impacting another app."
 		exit 1
-	fi
+	done
+
+	echo "Timed out waiting for port ${port} to become free"
+	exit 1
 }
 
 apt_safe() {
@@ -332,20 +339,22 @@ npm run build
 echo "[6/8] Starting backend with PM2"
 cd "$PROJECT_DIR/backend"
 
-APP_EXISTS="0"
 if pm2 describe "$PM2_APP_NAME" >/dev/null 2>&1; then
-	APP_EXISTS="1"
-	pm2 stop "$PM2_APP_NAME" || true
+	pm2 delete "$PM2_APP_NAME" || true
 	sleep 2
 fi
 
 ensure_backend_port_ready "$BACKEND_PORT" "$PROJECT_DIR"
 
-if [[ "$APP_EXISTS" == "1" ]]; then
-	pm2 restart "$PM2_APP_NAME" --update-env
-else
-	pm2 start npm --name "$PM2_APP_NAME" -- start
-fi
+pm2 start npm --name "$PM2_APP_NAME" -- start
+
+for i in $(seq 1 12); do
+	LISTENER_PID="$(ss -ltnp 2>/dev/null | awk -v p=":${BACKEND_PORT}" '$4 ~ p { if (match($0,/pid=[0-9]+/)) { print substr($0,RSTART+4,RLENGTH-4); exit } }')"
+	if [[ -n "$LISTENER_PID" ]]; then
+		break
+	fi
+	sleep 1
+done
 
 PM2_PID="$(pm2 pid "$PM2_APP_NAME" | tr -d '[:space:]')"
 if [[ -z "$PM2_PID" || "$PM2_PID" == "0" ]]; then
