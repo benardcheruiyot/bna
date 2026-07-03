@@ -355,11 +355,21 @@ if [[ -z "$PM2_PID" || "$PM2_PID" == "0" ]]; then
 	exit 1
 fi
 
-if ! ss -ltnp | grep -E ":${BACKEND_PORT}[[:space:]].*pid=${PM2_PID}," >/dev/null 2>&1; then
-	echo "PM2 app is not listening on expected port ${BACKEND_PORT} (pid: ${PM2_PID})"
+LISTENER_PID="$(ss -ltnp 2>/dev/null | awk -v p=":${BACKEND_PORT}" '$4 ~ p { if (match($0,/pid=[0-9]+/)) { print substr($0,RSTART+4,RLENGTH-4); exit } }')"
+if [[ -z "$LISTENER_PID" ]]; then
+	echo "No process is listening on expected port ${BACKEND_PORT}"
 	pm2 show "$PM2_APP_NAME" || true
 	tail -n 80 "/root/.pm2/logs/${PM2_APP_NAME}-error.log" || true
 	tail -n 80 "/root/.pm2/logs/${PM2_APP_NAME}-out.log" || true
+	exit 1
+fi
+
+LISTENER_CMD="$(ps -p "$LISTENER_PID" -o args= 2>/dev/null || true)"
+LISTENER_CWD="$(readlink -f "/proc/${LISTENER_PID}/cwd" 2>/dev/null || true)"
+if [[ "$LISTENER_CWD" != "$PROJECT_DIR/backend" && "$LISTENER_CMD" != *"$PROJECT_DIR/backend"* && "$LISTENER_CMD" != *"src/server.js"* ]]; then
+	echo "Unexpected listener on port ${BACKEND_PORT}: ${LISTENER_CMD}"
+	echo "Listener cwd: ${LISTENER_CWD:-unknown}"
+	pm2 show "$PM2_APP_NAME" || true
 	exit 1
 fi
 
