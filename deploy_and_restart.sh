@@ -332,9 +332,16 @@ npm run build
 echo "[6/8] Starting backend with PM2"
 cd "$PROJECT_DIR/backend"
 
+APP_EXISTS="0"
+if pm2 describe "$PM2_APP_NAME" >/dev/null 2>&1; then
+	APP_EXISTS="1"
+	pm2 stop "$PM2_APP_NAME" || true
+	sleep 2
+fi
+
 ensure_backend_port_ready "$BACKEND_PORT" "$PROJECT_DIR"
 
-if pm2 describe "$PM2_APP_NAME" >/dev/null 2>&1; then
+if [[ "$APP_EXISTS" == "1" ]]; then
 	pm2 restart "$PM2_APP_NAME" --update-env
 else
 	pm2 start npm --name "$PM2_APP_NAME" -- start
