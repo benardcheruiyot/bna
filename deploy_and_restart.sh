@@ -198,8 +198,10 @@ validate_backend_env() {
 ensure_backend_port_ready() {
 	local port="$1"
 	local project_dir="$2"
+	local backend_dir="${project_dir}/backend"
 	local existing_pid=""
 	local existing_cmd=""
+	local existing_cwd=""
 
 	existing_pid="$(ss -ltnp 2>/dev/null | awk -v p=":${port}" '$4 ~ p { if (match($0,/pid=[0-9]+/)) { print substr($0,RSTART+4,RLENGTH-4); exit } }')"
 
@@ -208,13 +210,15 @@ ensure_backend_port_ready() {
 	fi
 
 	existing_cmd="$(ps -p "$existing_pid" -o args= 2>/dev/null || true)"
+	existing_cwd="$(readlink -f "/proc/${existing_pid}/cwd" 2>/dev/null || true)"
 
-	if [[ "$existing_cmd" == *"${project_dir}/backend"* ]]; then
+	if [[ "$existing_cmd" == *"${backend_dir}"* || "$existing_cwd" == "$backend_dir" ]]; then
 		echo "Stopping stale backend process on port ${port} (pid: ${existing_pid})"
 		kill "$existing_pid" || true
 		sleep 2
 	else
 		echo "Port ${port} is occupied by a different process: ${existing_cmd}"
+		echo "Process cwd: ${existing_cwd:-unknown}"
 		echo "Refusing to continue to avoid impacting another app."
 		exit 1
 	fi
