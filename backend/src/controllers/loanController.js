@@ -5,6 +5,10 @@ const loanService = require('../services/loanService');
 const mpesaService = require('../services/mpesaService');
 const { AppError } = require('../middleware/errorHandler');
 const pushService = require('../services/pushService');
+const {
+  isAmbiguousMpesaDescription,
+  normalizeMpesaCallbackStatus,
+} = require('../utils/mpesaStatus');
 
 const STATUS_QUERY_MIN_INTERVAL_MS = 1200;
 const TERMINAL_STATUS_GRACE_MS = 25000;
@@ -41,7 +45,7 @@ class LoanController {
   }
 
   isAmbiguousStkResultDescription(text) {
-    return /unresolved reason type/i.test(String(text || ''));
+    return isAmbiguousMpesaDescription(text);
   }
 
   async ensureLoanCreatedForCompletedTransaction(checkoutRequestId) {
@@ -387,12 +391,7 @@ class LoanController {
       const getMetaValue = (name) => metadata.find((item) => item.Name === name)?.Value;
       const receiptNumber = getMetaValue('MpesaReceiptNumber') || null;
 
-      const normalizedStatus =
-        normalizedResultCode === '0'
-          ? 'completed'
-          : normalizedResultCode === '1032'
-            ? 'cancelled'
-            : 'failed';
+      const normalizedStatus = normalizeMpesaCallbackStatus(normalizedResultCode, ResultDesc);
 
       // Check if transaction exists
       let existingTransaction = await MpesaTransaction.findByCheckoutRequestId(CheckoutRequestID);

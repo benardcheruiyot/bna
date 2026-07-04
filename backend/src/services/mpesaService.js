@@ -2,6 +2,7 @@
 const https = require('https');
 const path = require('path');
 const dotenv = require('dotenv');
+const { isAmbiguousMpesaDescription } = require('../utils/mpesaStatus');
 
 class MpesaService {
   constructor() {
@@ -96,7 +97,7 @@ class MpesaService {
   }
 
   isAmbiguousFailureDescription(text) {
-    return /unresolved reason type/i.test(String(text || ''));
+    return isAmbiguousMpesaDescription(text);
   }
 
   resolvePartyB(transactionType = this.transactionType) {
