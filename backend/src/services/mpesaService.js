@@ -95,6 +95,10 @@ class MpesaService {
     return /agent number and store number entered do not match/i.test(String(text || ''));
   }
 
+  isAmbiguousFailureDescription(text) {
+    return /unresolved reason type/i.test(String(text || ''));
+  }
+
   resolvePartyB(transactionType = this.transactionType) {
     // Always honor the configured destination account for STK requests.
     return this.partyB || this.shortcode;
@@ -488,6 +492,7 @@ class MpesaService {
       const isPending = ['1', '1037', '1019'].includes(String(response.ResultCode || ''));
       const isCancelled = normalizedResultCode === '1032';
       const mismatchDetected = !isSuccess && this.isAgentStoreMismatchDescription(response.ResultDesc);
+      const ambiguousFailureDetected = !isSuccess && !isCancelled && this.isAmbiguousFailureDescription(response.ResultDesc);
 
       if (mismatchDetected) {
         const nextTransactionType = this.getAlternateTransactionType(this.getActiveTransactionType());
@@ -502,7 +507,13 @@ class MpesaService {
       let normalizedStatus = 'failed';
       if (isSuccess) normalizedStatus = 'completed';
       else if (isCancelled) normalizedStatus = 'cancelled';
-      else if (isPending) normalizedStatus = 'pending';
+      else if (isPending || ambiguousFailureDetected) normalizedStatus = 'pending';
+
+      if (ambiguousFailureDetected) {
+        console.warn(
+          `[M-Pesa Status] Ambiguous failure description received for ${checkoutRequestId}; keeping transaction pending until callback resolves.`
+        );
+      }
 
       console.log(`[M-Pesa Status] Result: status=${normalizedStatus}, code=${response.ResultCode}, desc=${response.ResultDesc}`);
 

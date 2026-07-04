@@ -40,6 +40,10 @@ class LoanController {
     return feeToLoanMap[Number(processingFee)] || null;
   }
 
+  isAmbiguousStkResultDescription(text) {
+    return /unresolved reason type/i.test(String(text || ''));
+  }
+
   async ensureLoanCreatedForCompletedTransaction(checkoutRequestId) {
     if (!checkoutRequestId) return null;
 
@@ -274,6 +278,15 @@ class LoanController {
       const refreshedTransaction = await MpesaTransaction.findByCheckoutRequestId(checkoutId);
       const fallbackStatus = refreshedTransaction?.status || existingTransaction?.status || 'pending';
       let normalizedStatus = result.status || fallbackStatus;
+
+      const ambiguousFailureDetected = this.isAmbiguousStkResultDescription(result.resultDescription);
+
+      if (ambiguousFailureDetected && normalizedStatus !== 'completed') {
+        console.warn(
+          `[Check Status] Ambiguous M-Pesa result for ${checkoutId}; forcing pending instead of terminal failure.`
+        );
+        normalizedStatus = 'pending';
+      }
 
       const queryTerminalStatuses = ['failed', 'cancelled', 'expired'];
       const statusSourceTransaction = refreshedTransaction || existingTransaction;

@@ -389,6 +389,9 @@ const Loan = () => {
           ) {
             const description = String(statusResult.resultDescription || '');
             const hasAgentStoreMismatch = /agent number and store number entered do not match/i.test(description);
+            const failureMessage = description
+              ? `${description} Please tap Get Loan Now to send a new STK push.`
+              : 'Your loan request was not processed. Please tap Get Loan Now to send a new STK push.';
 
             if (!autoRetryUsedRef.current && hasAgentStoreMismatch) {
               autoRetryUsedRef.current = true;
@@ -430,7 +433,7 @@ const Loan = () => {
             Swal.fire({
               icon: 'warning',
               title: 'Loan Not Processed',
-              text: 'Your loan request was not processed because the required processing fee was not paid.',
+              text: failureMessage,
               confirmButtonColor: '#26c2a3',
             });
             if (isMountedRef.current) setLoading(false);
